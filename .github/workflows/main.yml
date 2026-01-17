@@ -2,8 +2,8 @@ name: Mammam Daily Update
 
 on:
   schedule:
-    # 한국 시간 새벽 2시 = UTC 17시 (전날)
-    - cron: '0 17 * * *'
+    # 한국 00:01 = UTC 15:01
+    - cron: '1 15 * * *'
   workflow_dispatch: # 수동 실행 버튼 추가
 
 jobs:
