@@ -6,7 +6,7 @@ import random
 import datetime
 
 # ==========================================
-# [설정] 구글 시트 ID 및 탭 이름
+# [설정]
 SPREADSHEET_KEY = "1hQ1CKUWOlAZNQB3JK74hSZ3hI-QPbEpVGrn5q0PUGlg" 
 TAB_NAME = "인플루언서_DB"
 # ==========================================
@@ -42,13 +42,15 @@ def get_instagram_data(username):
             
             total_likes += post.likes
             total_comments += post.comments
+            
+            # [사장님 질문 확인] 파이썬에서는 video_view_count가 맞습니다!
             if post.is_video:
                 total_views += post.video_view_count
             
             count += 1
             time.sleep(random.uniform(1, 2))
 
-        # 3. 점수 계산
+        # 3. 점수 계산 (좋아요 + 댓글x3 + 조회수x0.1)
         score = 0
         avg_views = 0
         if count > 0:
@@ -56,6 +58,7 @@ def get_instagram_data(username):
             avg_views = int(total_views / count)
 
         return {
+            "username": profile.username, # 인스타 ID
             "full_name": full_name,
             "followers": followers,
             "profile_pic": profile_pic,
@@ -70,28 +73,20 @@ def get_instagram_data(username):
 
 def main():
     sheet = connect_google_sheets()
-    
-    # 오늘 날짜
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     
-    # C열(링크) 데이터 가져오기 (3번째 열)
-    urls = sheet.col_values(3) 
+    # [수정됨] 링크가 D열(4번째)로 옮겨졌습니다.
+    urls = sheet.col_values(4) 
     
-    # 2번째 줄부터 시작 (헤더 제외)
     for i, url in enumerate(urls[1:], start=2):
-        
-        # 1. 링크 없으면 패스
-        if not url or "instagram.com" not in url:
-            continue
+        if not url or "instagram.com" not in url: continue
 
-        # 2. 오늘 이미 업데이트했으면 패스 (P열 확인)
-        # (매일 새벽에 돌릴 때 중복 방지용)
-        last_update = sheet.cell(i, 16).value 
+        # Q열(17번째) 날짜 확인 (이미 오늘 했으면 패스)
+        last_update = sheet.cell(i, 17).value 
         if last_update == today:
-            print(f"PASS: {url} (이미 오늘 함)")
+            print(f"PASS: {url} (오늘 이미 완료)")
             continue
 
-        # 3. URL에서 아이디 추출
         try:
             username = url.strip().split("instagram.com/")[-1].replace("/", "").split("?")[0]
         except:
@@ -101,39 +96,39 @@ def main():
         data = get_instagram_data(username)
         
         if data:
-            # ---------------------------------------------------------
-            # [로봇 영역] A~H열, P열만 건드립니다. (I~O열은 절대 안 건드림)
-            # ---------------------------------------------------------
-            
-            # A열: ID 생성 (없을 때만)
+            # A열: ID (없으면 생성)
             current_id = sheet.cell(i, 1).value
             if not current_id:
                 sheet.update_cell(i, 1, f"INF_{i:03d}") 
             
-            # B열: 채널명
-            sheet.update_cell(i, 2, data['full_name'])
+            # B열: 인스타ID (NEW)
+            sheet.update_cell(i, 2, data['username'])
             
-            # D열: 프로필사진 URL
-            sheet.update_cell(i, 4, data['profile_pic'])
+            # C열: 채널명
+            sheet.update_cell(i, 3, data['full_name'])
             
-            # E열: 팔로워
-            sheet.update_cell(i, 5, data['followers'])
+            # D열은 링크니까 건너뜀
             
-            # F열: 화력점수
-            sheet.update_cell(i, 6, data['score'])
+            # E열: 프로필사진
+            sheet.update_cell(i, 5, data['profile_pic'])
             
-            # G열: 평균조회수
-            sheet.update_cell(i, 7, data['avg_views'])
+            # F열: 팔로워
+            sheet.update_cell(i, 6, data['followers'])
             
-            # H열: 소개글(Bio)
-            sheet.update_cell(i, 8, data['bio'])
+            # G열: 화력점수
+            sheet.update_cell(i, 7, data['score'])
             
-            # P열: 업데이트 날짜
-            sheet.update_cell(i, 16, today)
+            # H열: 평균조회수
+            sheet.update_cell(i, 8, data['avg_views'])
             
-            print(f"   ✅ 저장 완료! (팔로워: {data['followers']}, 조회수: {data['avg_views']})")
+            # I열: 소개글
+            sheet.update_cell(i, 9, data['bio'])
+            
+            # Q열: 업데이트일
+            sheet.update_cell(i, 17, today)
+            
+            print(f"   ✅ 저장 완료! (ID: {data['username']}, 점수: {data['score']})")
         
-        # 5초 대기
         time.sleep(5)
 
 if __name__ == "__main__":
