@@ -31,8 +31,8 @@ jobs:
         
 # [추가할 부분] 금고(Secret)에 있는 내용을 꺼내서 key.json 파일을 만드는 마법
     - name: Create key file
-      run: echo '${{ secrets.GOOGLE_KEY_JSON }}' > key.json
-
+      run: echo '${{ secrets.GOOGLE_KEY_JSON }}' > key.json  
+    
     # ... (그 다음이 Run Crawler 단계) ...
     - name: Run Crawler
       env:
