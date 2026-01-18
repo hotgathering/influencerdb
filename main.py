@@ -83,35 +83,42 @@ def main():
     if target_url:
         print(f"🚀 [단건 실행 모드] '{target_url}' 계정만 업데이트합니다.")
     else:
-        print(f"🔄 [빈칸 채우기 모드] ID가 없는 항목만 찾아 업데이트합니다.")
+        print(f"🔄 [전체/스케줄 모드] 신규 추가 및 오래된 데이터를 업데이트합니다.")
 
-    # 데이터 한 번에 가져오기
+    # 1. 데이터를 한 번에 다 가져오기 (속도 최적화)
     col_ids = sheet.col_values(1)    # A열 (ID)
     col_urls = sheet.col_values(4)   # D열 (링크)
+    col_dates = sheet.col_values(17) # Q열 (업데이트일)
     
     # enumerate 시작값 2 (헤더 다음부터)
     for i, url in enumerate(col_urls[1:], start=2):
         if not url or "instagram.com" not in url: continue
         
-        # 현재 줄의 ID 확인 (리스트 범위 안전장치 포함)
+        # 안전장치: 리스트 범위 체크
         current_id = col_ids[i-1] if len(col_ids) > i-1 else ""
+        last_update = col_dates[i-1] if len(col_dates) > i-1 else ""
 
         # ==================================================
-        # [핵심 변경] 실행할지 말지 결정하는 판사님
+        # [핵심 로직] 실행 여부 결정 (판사님 입장)
         # ==================================================
         
-        # 1. 단건 모드: 타겟 URL과 다르면 건너뜀 (기존 동일)
+        # 1. [단건 모드] 타겟 URL과 다르면 건너뜀
         if target_url and target_url != url:
             continue
             
-        # 2. 전체 모드 (빈칸 채우기):
+        # 2. [전체 모드] (빈칸 채우기 + 새벽 스케줄)
         if not target_url:
-            # ★ ID가 있으면 무조건 건너뜁니다! (새벽에 돌릴 거니까)
-            if current_id and current_id.strip() != "":
-                # print(f"PASS: {url} (이미 등록됨)")
-                continue
+            # ID가 비어있다? -> 무조건 실행 (신규 추가니까)
+            if not current_id:
+                pass 
             
-            # ID가 없을 때만 아래로 통과!
+            # ID는 있는데, 날짜가 오늘이다? -> 건너뜀 (이미 했으니까)
+            elif last_update == today:
+                # print(f"PASS: {url} (오늘 이미 완료)")
+                continue
+                
+            # ID도 있고 날짜가 옛날이다? -> 실행 (업데이트 해야 하니까!)
+            # (즉, 여기서 continue를 안 하고 밑으로 내려보냄)
         # ==================================================
 
         try:
@@ -119,35 +126,35 @@ def main():
         except:
             continue
         
-        print(f"🆕 신규 발견! {username} 분석 시작... (Row {i})")
+        print(f"🔎 분석 시작: {username} (Row {i})")
         data = get_instagram_data(username)
         
         if data:
-            # ID 생성 (빈칸 채우기 핵심)
+            # ID 없는 경우에만 생성
             if not current_id:
                 new_id = f"INF_{i:03d}"
                 sheet.update_cell(i, 1, new_id)
-                print(f"   ✨ ID 부여 완료: {new_id}")
+                print(f"   ✨ ID 부여: {new_id}")
             
             # 데이터 저장
             sheet.update_cell(i, 2, data['username'])
             sheet.update_cell(i, 3, data['full_name'])
-            # D열(링크)은 건드리지 않음
+            # D열(링크) 건너뜀
             sheet.update_cell(i, 5, data['profile_pic'])
             sheet.update_cell(i, 6, data['followers'])
             sheet.update_cell(i, 7, data['score'])
             sheet.update_cell(i, 8, data['avg_views'])
             sheet.update_cell(i, 9, data['bio'])
-            sheet.update_cell(i, 17, today)
+            sheet.update_cell(i, 17, today) # 날짜 도장 쾅!
             
             print(f"   ✅ 저장 완료! (점수: {data['score']})")
         
-        # 단건 모드면 여기서 바로 종료
+        # 단건 모드면 바로 종료
         if target_url:
             print("🚀 단건 업데이트 완료! 프로그램을 종료합니다.")
             break 
 
-        # 전체 모드(빈칸 채우기)일 때만 휴식
+        # 전체 모드일 때만 휴식
         wait_time = random.uniform(15, 30)
         print(f"   -> {int(wait_time)}초 휴식...")
         time.sleep(wait_time)
