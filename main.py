@@ -13,19 +13,18 @@ SPREADSHEET_KEY = "1hQ1CKUWOlAZNQB3JK74hSZ3hI-QPbEpVGrn5q0PUGlg"
 TAB_NAME = "인플루언서_DB"
 
 # 열 번호 매칭 
-COL_ID = 1            # 1: ID (A열)
-COL_INSTA_ID = 2      # 2: 인스타ID (B열)
-COL_CHANNEL_NAME = 3  # 3: 채널명 (C열)
-COL_LINK = 4          # 4: 링크 (D열)
-COL_PROFILE_PIC = 5   # 5: 프로필사진 (E열)
-COL_FOLLOWERS = 6     # 6: 팔로워 (F열)
-COL_SCORE = 7         # 7: 🔥화력점수 (G열)
-COL_AVG_VIEWS = 8     # 8: 평균조회수 (H열)
-COL_BIO = 9           # 9: 소개글(Bio) (I열)
-COL_UPDATE_DATE = 17  # 17: 업데이트일 (Q열)
+COL_ID = 1            # A열
+COL_INSTA_ID = 2      # B열
+COL_CHANNEL_NAME = 3  # C열
+COL_LINK = 4          # D열
+COL_PROFILE_PIC = 5   # E열
+COL_FOLLOWERS = 6     # F열
+COL_SCORE = 7         # G열
+COL_AVG_VIEWS = 8     # H열
+COL_BIO = 9           # I열 (우선순위 판별 기준!)
+COL_UPDATE_DATE = 17  # Q열
 
-# ★ 핵심 안전장치: 한 번 실행할 때 최대 몇 명까지 분석할 것인가?
-MAX_PROCESS_PER_RUN = 5 
+MAX_PROCESS_PER_RUN = 5 # 1회 최대 처리 인원
 # ==========================================
 
 def connect_google_sheets():
@@ -50,12 +49,12 @@ def get_instagram_data(username):
         count, total_likes, total_comments, total_views = 0, 0, 0, 0
         
         for post in posts:
-            if count >= 5: break # 분석 게시물 수도 10개에서 5개로 줄여 속도와 안전성 확보
+            if count >= 5: break
             total_likes += post.likes
             total_comments += post.comments
             if post.is_video: total_views += post.video_view_count
             count += 1
-            time.sleep(random.uniform(2, 5)) # 게시물 사이의 휴식 시간도 늘림
+            time.sleep(random.uniform(2, 5))
 
         score = total_likes + (total_comments * 3) + (total_views * 0.1)
         avg_views = int(total_views / count) if count > 0 else 0
@@ -67,7 +66,6 @@ def get_instagram_data(username):
     except Exception as e:
         error_msg = str(e)
         print(f"❌ 에러 발생 ({username}): {error_msg}")
-        # 429 에러 발생 시 완전히 중단하라는 신호 반환
         if "429" in error_msg or "Too Many Requests" in error_msg:
             return "STOP_429"
         return None
@@ -77,33 +75,56 @@ def main():
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     target_id = os.environ.get('TARGET_ID', '').strip()
 
+    # 데이터 읽어오기
     col_ids = sheet.col_values(COL_ID)
     col_insta_ids = sheet.col_values(COL_INSTA_ID)
     col_dates = sheet.col_values(COL_UPDATE_DATE)
-    
-    processed_count = 0 # 처리한 인원 수 카운트
+    col_bios = sheet.col_values(COL_BIO) # ★ 소개글 데이터를 읽어옵니다.
+
+    # ★ 1. 우선순위 분류 작업 (소개글 빈칸 vs 채워진 칸)
+    empty_bio_rows = []
+    filled_bio_rows = []
 
     for i, insta_id in enumerate(col_insta_ids[1:], start=2):
         if not insta_id: continue
-        
-        # 목표 처리량에 도달하면 안전하게 종료
-        if processed_count >= MAX_PROCESS_PER_RUN and not target_id:
-            print(f"🛑 인스타그램 차단 방지를 위해 오늘치({MAX_PROCESS_PER_RUN}명) 작업을 완료하고 휴식합니다.")
-            break
         
         if target_id and target_id != insta_id: continue
             
         last_update = col_dates[i-1] if len(col_dates) > i-1 else ""
         if not target_id and last_update == today: continue
 
+        # 소개글(Bio)이 비어있는지 확인
+        bio_val = col_bios[i-1].strip() if len(col_bios) > i-1 else ""
+        
+        if not bio_val:
+            empty_bio_rows.append(i) # 빈칸이면 1순위 그룹으로
+        else:
+            filled_bio_rows.append(i) # 채워져있으면 2순위 그룹으로
+
+    # ★ 2. 빈칸 그룹을 먼저 훑고, 남은 자리에 채워진 그룹을 이어 붙임
+    target_rows = empty_bio_rows + filled_bio_rows
+
+    if not target_id:
+        print(f"📊 타겟팅 완료: 소개글 빈칸 {len(empty_bio_rows)}명, 업데이트 대상 {len(filled_bio_rows)}명 대기 중")
+
+    processed_count = 0
+
+    # ★ 3. 분류된 순서대로 크롤링 실행
+    for i in target_rows:
+        insta_id = col_insta_ids[i-1]
+        
+        # 목표 처리량 도달 시 종료
+        if processed_count >= MAX_PROCESS_PER_RUN and not target_id:
+            print(f"🛑 차단 방지: 오늘 목표치({MAX_PROCESS_PER_RUN}명) 완료. 퇴근합니다!")
+            break
+
         print(f"🔎 분석 시작: {insta_id} (Row {i})")
         generated_url = f"https://www.instagram.com/{insta_id}/"
         
         data = get_instagram_data(insta_id)
         
-        # 429 에러를 감지하면 그 즉시 전체 루프 중단
         if data == "STOP_429":
-            print("🚨 인스타그램이 봇을 감지했습니다! 6시간 타임아웃을 막기 위해 프로그램을 즉시 종료합니다.")
+            print("🚨 429 에러 감지! 6시간 에러를 막기 위해 봇을 즉시 종료합니다.")
             break
 
         if data:
@@ -123,10 +144,13 @@ def main():
             print(f"   ✅ {insta_id} 저장 완료!")
             processed_count += 1
 
-        # 다음 사람으로 넘어가기 전 충분한 휴식 (20~40초)
-        wait_time = random.uniform(20, 40)
-        print(f"   ⏳ {int(wait_time)}초 동안 숨 고르기...")
-        time.sleep(wait_time)
+        # 단건 실행이면 바로 끝내고, 대량 실행이면 휴식
+        if target_id:
+            break
+        else:
+            wait_time = random.uniform(20, 40)
+            print(f"   ⏳ {int(wait_time)}초 동안 숨 고르기...")
+            time.sleep(wait_time)
 
 if __name__ == "__main__":
     main()
