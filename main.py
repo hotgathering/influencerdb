@@ -5,6 +5,7 @@ import time
 import random
 import datetime
 import os
+import base64
 
 # ==========================================
 # [설정] 열 번호 매칭 (1~17열 완벽 매칭)
@@ -24,6 +25,7 @@ COL_BIO = 9           # I열
 COL_UPDATE_DATE = 17  # Q열
 
 MAX_PROCESS_PER_RUN = 5 # 전체 실행 시 최대 5명만 처리
+INSTA_USERNAME = "wallykim119"  # 세션 파일 로드용 유저명
 # ==========================================
 
 def connect_google_sheets():
@@ -33,24 +35,30 @@ def connect_google_sheets():
     return client.open_by_key(SPREADSHEET_KEY).worksheet(TAB_NAME)
 
 def create_instaloader_session():
-    """로그인된 Instaloader 세션 생성"""
+    """Base64로 저장된 세션 파일을 복원하여 로그인된 Instaloader 세션 생성"""
     L = instaloader.Instaloader(
         user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        max_connection_attempts=1  # 429 시 재시도 안 하고 바로 에러 발생
+        max_connection_attempts=1
     )
     
-    username = os.environ.get('INSTA_USERNAME', '').strip()
-    password = os.environ.get('INSTA_PASSWORD', '').strip()
+    session_b64 = os.environ.get('INSTA_SESSION', '').strip()
     
-    if username and password:
+    if session_b64:
         try:
-            L.login(username, password)
-            print(f"✅ Instagram 로그인 성공: {username}")
+            # Base64 디코딩하여 세션 파일 복원
+            session_data = base64.b64decode(session_b64)
+            session_file = f"/tmp/session-{INSTA_USERNAME}"
+            with open(session_file, "wb") as f:
+                f.write(session_data)
+            
+            # 세션 파일에서 로드
+            L.load_session_from_file(INSTA_USERNAME, session_file)
+            print(f"✅ Instagram 세션 로드 성공: {INSTA_USERNAME}")
         except Exception as e:
-            print(f"⚠️ Instagram 로그인 실패: {e}")
+            print(f"⚠️ Instagram 세션 로드 실패: {e}")
             print("   비로그인 모드로 계속 진행합니다...")
     else:
-        print("⚠️ Instagram 계정 정보 없음. 비로그인 모드로 진행.")
+        print("⚠️ Instagram 세션 정보 없음. 비로그인 모드로 진행.")
     
     return L
 
@@ -88,7 +96,7 @@ def get_instagram_data(L, username):
 def main():
     print("🚀 크롤링 봇 실행됨!")
     
-    # ★ 변경: 로그인 세션 1회 생성 후 재사용
+    # ★ 세션 파일 방식으로 로그인
     L = create_instaloader_session()
     
     sheet = connect_google_sheets()
@@ -136,7 +144,7 @@ def main():
             break
 
         print(f"🔎 크롤링 시작: {insta_id} (Row {i})")
-        data = get_instagram_data(L, insta_id)  # ★ 변경: 세션 전달
+        data = get_instagram_data(L, insta_id)
         
         if data == "STOP_429":
             print("🚨 429 에러 감지! 봇을 즉시 종료합니다.")
