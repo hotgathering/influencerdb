@@ -32,8 +32,30 @@ def connect_google_sheets():
     client = gspread.authorize(creds)
     return client.open_by_key(SPREADSHEET_KEY).worksheet(TAB_NAME)
 
-def get_instagram_data(username):
-    L = instaloader.Instaloader(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+def create_instaloader_session():
+    """로그인된 Instaloader 세션 생성"""
+    L = instaloader.Instaloader(
+        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        max_connection_attempts=1  # 429 시 재시도 안 하고 바로 에러 발생
+    )
+    
+    username = os.environ.get('INSTA_USERNAME', '').strip()
+    password = os.environ.get('INSTA_PASSWORD', '').strip()
+    
+    if username and password:
+        try:
+            L.login(username, password)
+            print(f"✅ Instagram 로그인 성공: {username}")
+        except Exception as e:
+            print(f"⚠️ Instagram 로그인 실패: {e}")
+            print("   비로그인 모드로 계속 진행합니다...")
+    else:
+        print("⚠️ Instagram 계정 정보 없음. 비로그인 모드로 진행.")
+    
+    return L
+
+def get_instagram_data(L, username):
+    """이미 생성된 Instaloader 세션(L)을 재사용하여 크롤링"""
     try:
         profile = instaloader.Profile.from_username(L.context, username)
         
@@ -65,6 +87,10 @@ def get_instagram_data(username):
 
 def main():
     print("🚀 크롤링 봇 실행됨!")
+    
+    # ★ 변경: 로그인 세션 1회 생성 후 재사용
+    L = create_instaloader_session()
+    
     sheet = connect_google_sheets()
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     target_id = os.environ.get('TARGET_ID', '').strip()
@@ -91,7 +117,7 @@ def main():
         for i, insta_id in enumerate(col_insta_ids[1:], start=2):
             if not insta_id: continue
             last_update = col_dates[i-1] if len(col_dates) > i-1 else ""
-            if last_update == today: continue # 오늘 이미 했으면 패스
+            if last_update == today: continue
 
             bio_val = col_bios[i-1].strip() if len(col_bios) > i-1 else ""
             if not bio_val:
@@ -110,7 +136,7 @@ def main():
             break
 
         print(f"🔎 크롤링 시작: {insta_id} (Row {i})")
-        data = get_instagram_data(insta_id)
+        data = get_instagram_data(L, insta_id)  # ★ 변경: 세션 전달
         
         if data == "STOP_429":
             print("🚨 429 에러 감지! 봇을 즉시 종료합니다.")
@@ -134,9 +160,9 @@ def main():
             processed_count += 1
 
         if target_id: 
-            break # 단건이면 1명 하고 바로 끝
+            break
         else:
-            time.sleep(random.uniform(20, 30)) # 대량일 때만 휴식
+            time.sleep(random.uniform(20, 30))
 
 if __name__ == "__main__":
     main()
