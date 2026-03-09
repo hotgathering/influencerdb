@@ -4,7 +4,6 @@ on:
   schedule:
     # 한국 시간으로 매일 새벽 00:01에 자동 실행 (UTC 15:01)
     - cron: '1 15 * * *'
-    # 필요할 때 깃허브에서 버튼 눌러서 직접 실행하는 기능
   workflow_dispatch:
     inputs:
       target_id:
@@ -30,16 +29,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    # 구글 서비스 계정 키(Base64)를 파일로 복구
     - name: Create key file
       run: |
         echo "${{ secrets.GOOGLE_KEY_JSON }}" | base64 --decode > key.json
 
-    # ★ 변경: Instagram 로그인 정보 환경변수 추가
+    # ★ 변경: 세션 파일 방식으로 Instagram 인증
     - name: Run Crawler
       env:
         TARGET_ID: ${{ github.event.inputs.target_id }}
-        INSTA_USERNAME: ${{ secrets.INSTA_USERNAME }}
-        INSTA_PASSWORD: ${{ secrets.INSTA_PASSWORD }}
+        INSTA_SESSION: ${{ secrets.INSTA_SESSION }}
       run: |
         python main.py
